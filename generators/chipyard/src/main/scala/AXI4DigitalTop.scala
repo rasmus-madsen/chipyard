@@ -3,10 +3,14 @@ package chipyard
 import chisel3._
 
 import freechips.rocketchip.subsystem._
-import freechips.rocketchip.system._
+//import freechips.rocketchip.system._
 import freechips.rocketchip.trace._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.devices.tilelink._
+import freechips.rocketchip.amba.axi4._
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.tilelink._
+import testchipip._  // why do I need this?
 
 // ------------------------------------
 // BOOM and/or Rocket Top Level Systems
@@ -23,6 +27,7 @@ class AXI4DigitalTop(implicit p: Parameters) extends ChipyardSystem
   with testchipip.serdes.CanHavePeripheryTLSerial // Enables optionally adding the tl-serial interface
   with testchipip.serdes.old.CanHavePeripheryTLSerial // Enables optionally adding the DEPRECATED tl-serial interface
   with testchipip.soc.CanHavePeripheryChipIdPin // Enables optional pin to set chip id for multi-chip configs
+//can you   with freechips.rocketchip.subsystem.HasPeripheryBus // <---- My attempt to get access to pbus key
   with sifive.blocks.devices.i2c.HasPeripheryI2C // Enables optionally adding the sifive I2C
   with sifive.blocks.devices.timer.HasPeripheryTimer // Enables optionally adding the timer device
   with sifive.blocks.devices.pwm.HasPeripheryPWM // Enables optionally adding the sifive PWM
@@ -36,11 +41,78 @@ class AXI4DigitalTop(implicit p: Parameters) extends ChipyardSystem
   with chipyard.clocking.CanHaveClockTap // Enables optionally adding a clock tap output port
   with constellation.soc.CanHaveGlobalNoC // Support instantiating a global NoC interconnect
   with rerocc.CanHaveReRoCCTiles // Support tiles that instantiate rerocc-attached accelerators
+//   with testchipip.ctc.CanHavePeripheryCTC // Support optional CTC link   // <<<--------------------------why does this work in DigitalTop but not in my copy?
 {
-  println(">>> YAY USING AXI4DigitalTop <<<")
+  // adding AXI4Slave port to NoC
+  val idBits = 1
+  val externAXIMaster = AXI4MasterNode(
+    Seq(AXI4MasterPortParameters(
+      masters = Seq(
+        AXI4MasterParameters(
+	  name = "ext-axi-master",
+	  id = IdRange(0,1 << (idBits-1)),
+	  maxFlight = Some(1)
+	 )
+       )
+     )
+  ))
+
+  val fifoBits = 1
+  val sbus = locateTLBusWrapper(SBUS)
+  val beatBytes = sbus.beatBytes
+  
+//  sbus.inwardNode := AXI4ToTL() := AXI4UserYanker() := AXI4Fragmenter() := externAXIMaster
+  sbus.inwardNode := AXI4ToTL() := externAXIMaster
+//  AXI4ToTL() :=
+//  AXI4UserYanker(Some(1 << (idBits - fifoBits))) :=
+//  AXI4Fragmenter() :=
+//  AXI4IdIndexer(fifoBits) :=
+//  externAXIMaster
+
+
   override lazy val module = new AXI4DigitalTopImp(this)
+  println(">>> YAY USING AXI4DigitalTop <<<")
 }
 
 class AXI4DigitalTopImp(l: AXI4DigitalTop) extends ChipyardSystemModule(l)
   with freechips.rocketchip.util.DontTouch
+  {
+    val (out, edge) = l.externAXIMaster.out(0)
+    
+  val io = IO(new Bundle {
+    val axi_from_fpga = Flipped(new AXI4Bundle(edge.bundle))
+    })
+
+  // actual connection from ext axi wires to deplomacy node
+  io.axi_from_fpga <> out
+  // io.axi_from_fpga <> l.externAXIMaster.out.head._1 // <<-- apparently unsafe method
+ }
+
 // DOC include end: AXI4DigitalTop
+
+
+
+//--------------------- example code --------------------------->>
+//
+//  val memAXI4Node = AXI4MasterNode(
+//    Seq(AXI4MasterPortParameters(
+//      masters = Seq(AXI4MasterParameters(
+//        name = "myPortName",
+//        id = IdRange(0, 1 << idBits))))))
+//  val memoryTap = TLIdentityNode() // Every bus connection should have their own tap node
+//  // DOC include end: AXI4 node
+//
+//
+//  // DOC include start: AXI4 convert
+//  (tlMasterXbar.node  // tlMasterXbar is the bus crossbar to be used when this core / tile is acting as a master; otherwise, use tlSlaveXBar
+//    := memoryTap
+//    := TLBuffer()
+//    := TLFIFOFixer(TLFIFOFixer.all) // fix FIFO ordering
+//    := TLWidthWidget(masterPortBeatBytes) // reduce size of TL
+//    := AXI4ToTL() // convert to TL
+//    := AXI4UserYanker(Some(2)) // remove user field on AXI interface. need but in reality user intf. not needed
+//    := AXI4Fragmenter() // deal with multi-beat xacts
+//    := memAXI4Node) // The custom node, see below
+//  // DOC include end: AXI4 convert
+//
+//--------------------- Example code end ----------------------------<<
