@@ -42,8 +42,38 @@ class AXI4DigitalTop(implicit p: Parameters) extends ChipyardSystem
   with constellation.soc.CanHaveGlobalNoC // Support instantiating a global NoC interconnect
   with rerocc.CanHaveReRoCCTiles // Support tiles that instantiate rerocc-attached accelerators
   with freechips.rocketchip.subsystem.CanHaveSlaveAXI4Port
+  //with CanHaveSlaveAXI4Port
 //   with testchipip.ctc.CanHavePeripheryCTC // Support optional CTC link   // <<<--------------------------why does this work in DigitalTop but not in my copy?
 {
+//  // adding AXI4Slave port to NoC
+//  val idBits = 1
+//  val externAXIMaster = AXI4MasterNode(
+//    Seq(AXI4MasterPortParameters(
+//      masters = Seq(
+//        AXI4MasterParameters(
+//	  name = "ext-axi-master",
+//	  id = IdRange(0,1 << (idBits-1)),
+//	  maxFlight = Some(1),
+//	  aligned = true
+//	 )
+//       )
+//     )
+//  ))
+//
+//  val fifoBits = 1
+//  val sbus = locateTLBusWrapper(FBUS)
+//  val beatBytes = sbus.beatBytes
+//  println(s"Beat bytes: $beatBytes")
+//
+//
+////  sbus.inwardNode := AXI4ToTL() := AXI4UserYanker() := AXI4Fragmenter() := externAXIMaster
+//  sbus.inwardNode := AXI4ToTL() := externAXIMaster
+////  AXI4ToTL() :=
+////  AXI4UserYanker(Some(1 << (idBits - fifoBits))) :=
+////  AXI4Fragmenter() :=
+////  AXI4IdIndexer(fifoBits) :=
+////  externAXIMaster
+//
 
   override lazy val module = new AXI4DigitalTopImp(this)
   println(">>> YAY USING AXI4DigitalTop <<<")
@@ -51,5 +81,43 @@ class AXI4DigitalTop(implicit p: Parameters) extends ChipyardSystem
 
 class AXI4DigitalTopImp(l: AXI4DigitalTop) extends ChipyardSystemModule(l)
   with freechips.rocketchip.util.DontTouch
+  {
+//  val (out, edge) = l.externAXIMaster.out(0)
+//  
+//val io = IO(new Bundle {
+//  val axi_from_fpga = Flipped(new AXI4Bundle(edge.bundle))
+//  })
+//
+//// actual connection from ext axi wires to deplomacy node
+//io.axi_from_fpga <> out
+//// io.axi_from_fpga <> l.externAXIMaster.out.head._1 // <<-- apparently unsafe method
+ }
 
 // DOC include end: AXI4DigitalTop
+
+
+
+//--------------------- example code --------------------------->>
+//
+//  val memAXI4Node = AXI4MasterNode(
+//    Seq(AXI4MasterPortParameters(
+//      masters = Seq(AXI4MasterParameters(
+//        name = "myPortName",
+//        id = IdRange(0, 1 << idBits))))))
+//  val memoryTap = TLIdentityNode() // Every bus connection should have their own tap node
+//  // DOC include end: AXI4 node
+//
+//
+//  // DOC include start: AXI4 convert
+//  (tlMasterXbar.node  // tlMasterXbar is the bus crossbar to be used when this core / tile is acting as a master; otherwise, use tlSlaveXBar
+//    := memoryTap
+//    := TLBuffer()
+//    := TLFIFOFixer(TLFIFOFixer.all) // fix FIFO ordering
+//    := TLWidthWidget(masterPortBeatBytes) // reduce size of TL
+//    := AXI4ToTL() // convert to TL
+//    := AXI4UserYanker(Some(2)) // remove user field on AXI interface. need but in reality user intf. not needed
+//    := AXI4Fragmenter() // deal with multi-beat xacts
+//    := memAXI4Node) // The custom node, see below
+//  // DOC include end: AXI4 convert
+//
+//--------------------- Example code end ----------------------------<<
